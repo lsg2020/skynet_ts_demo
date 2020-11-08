@@ -32,3 +32,4 @@ local ret = skynet.call(test, "lua", "hello", 1, 2, 3, 4)
 # 每秒lua消息测试
 * lua 服务平均每秒处理消息数: 219844
 * js 服务平均每秒处理消息数: 197587
+* [v8指针压缩](https://v8.dev/blog/pointer-compression)会对每个isolate预留4gb虚拟内存空间
