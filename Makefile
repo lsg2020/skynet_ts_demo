@@ -52,7 +52,7 @@ $(SKYNET_TS_FILE):
 	git submodule update --init --recursive
 
 $(CSERVICE_DIR)/snjs.so: | $(SKYNET_TS_FILE)
-	cd skynet_ts && cargo build --release && cp target/release/libsnjs.so $(CSERVICE_DIR)/snjs.so
+	export V8_FROM_SOURCE=$(PWD)/skynet_ts/rusty_v8/v8/ && cd skynet_ts && cargo build --release && cp target/release/libsnjs.so $(CSERVICE_DIR)/snjs.so
 
 ts_src=$(shell find ts -name "*.ts")
 js_dst=$(patsubst %.ts, %.js, $(ts_src))
