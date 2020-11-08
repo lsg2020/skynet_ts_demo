@@ -23,9 +23,9 @@ skynet.start(function()
 
     print("test lua msg")
     local testlua = skynet.newservice("test1")
-    skynet.newservice("test_send", ".testlua", 2000)
-    skynet.newservice("test_send", ".testlua", 2000)
-    skynet.newservice("test_send", ".testjs", 2000)
+    skynet.newservice("test_send", testlua, 2000)
+    skynet.newservice("test_send", testlua, 2000)
+    skynet.newservice("test_send", testlua, 2000)
     skynet.sleep(2000)
     skynet.kill(testlua)
 
@@ -33,11 +33,10 @@ skynet.start(function()
 
     print("test js msg")
     local testjs = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test1")
-    skynet.newservice("test_send", ".testjs", 2000)
-    skynet.newservice("test_send", ".testjs", 2000)
-    skynet.newservice("test_send", ".testjs", 2000)
+    skynet.newservice("test_send", testjs, 2000)
+    skynet.newservice("test_send", testjs, 2000)
+    skynet.newservice("test_send", testjs, 2000)
     skynet.sleep(2000)
     skynet.kill(testjs)
-
 
 end)

@@ -13,7 +13,7 @@ skynet.start(function()
                 test_array
                 )
     
-                if #test_array < 100 then
+                if #test_array < 50 then
                     table.insert(test_array, #test_array)
                 end    
             end
