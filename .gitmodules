@@ -1,0 +1,6 @@
+[submodule "skynet_ts"]
+	path = skynet_ts
+	url = https://github.com/lsg2020/skynet_ts
+[submodule "skynet"]
+	path = skynet
+	url = https://github.com/cloudwu/skynet
