@@ -29,6 +29,6 @@ skynet.start(() => {
 local test = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test")
 local ret = skynet.call(test, "lua", "hello", 1, 2, 3, 4)
 ```
-# 每秒lua消息测试 cpu: 4核 i7-9750H CPU @ 2.60GHz
+# 每秒lua消息测试
 * lua 服务平均每秒处理消息数: 219844
 * js 服务平均每秒处理消息数: 197587
