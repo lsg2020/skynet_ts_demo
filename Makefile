@@ -46,7 +46,7 @@ clean: clean-skynet
 
 # skynet_ts
 all: skynet_ts
-SKYNET_TS_FILE=skynet_ts/Cargo.toml
+SKYNET_TS_FILE=skynet_ts/rusty_v8/Cargo.toml
 
 $(SKYNET_TS_FILE):
 	git submodule update --init --recursive
