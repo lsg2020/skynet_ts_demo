@@ -13,7 +13,7 @@ skynet.start(() => {
             begin_ts = now;
         }
         if (now - ts > 100) {
-            console.log("js msg per sec:", amount_pre_sec, Math.floor(total / Math.floor((now - begin_ts) / 100)));
+            console.log("js msg per sec:", amount_pre_sec, Math.floor(total / Math.floor((now - begin_ts) / 100)), skynet.memory_info());
             amount_pre_sec = 0;
             ts = now;
         }

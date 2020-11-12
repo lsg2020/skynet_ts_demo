@@ -2,6 +2,7 @@ local skynet = require "skynet"
 require "skynet.manager"
 
 skynet.start(function()
+    skynet.newservice("debug_console", 8000)
 
     skynet.dispatch("lua", function(session, source, cmd, ...)
         print("lua recv call", cmd, ...)
