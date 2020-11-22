@@ -1,5 +1,8 @@
 # skynet_ts_demo
 * skynet_ts 测试示例 完善中
+
+# [使用 `chrome devtools` 调试服务](https://github.com/lsg2020/skynet_ts_demo/blob/master/doc/devtools.md)
+
 # build
 * Rust `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 * TypeScript `npm install typescript -g`
