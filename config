@@ -12,3 +12,4 @@ logpath = "."
 harbor = 0
 start = "main"	-- main script
 bootstrap = "snlua bootstrap"	-- The service for bootstrap
+js_inspector = true

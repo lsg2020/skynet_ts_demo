@@ -6,6 +6,11 @@ export function reg_debugcmd(name, fn) {
     extern_dbgcmd.set(name, fn);
     return prev;
 }
+export function unreg_debugcmd(name) {
+    let prev = extern_dbgcmd.get(name);
+    extern_dbgcmd.delete(name);
+    return prev;
+}
 let internal_info_func = undefined;
 export function info_func(func) {
     let prev = internal_info_func;
@@ -103,3 +108,34 @@ async function _debug_dispatch(context, cmd, ...params) {
     skynet.assert(f, cmd);
     await f(context, ...params);
 }
+export let v8inspector = {
+    enable: async (name, listen) => {
+        let [proxy_addr, proty_ptype, pause_addr, resume_addr] = await skynet.call(".v8_inspector", skynet.PTYPE_NAME.LUA, "enable", skynet.self(), name, listen);
+        reg_debugcmd("v8inspector", (context, cmd, ...params) => {
+            if (cmd == "enable") {
+                let [name, listen] = params;
+                v8inspector.enable(name, listen);
+            }
+            else if (cmd == "disable") {
+                v8inspector.disable();
+            }
+            else if (cmd == "connect") {
+                let session_id = Deno.v8inspect.v8inspect_connect(proxy_addr, proty_ptype, pause_addr, resume_addr);
+                skynet.retpack(context, session_id);
+            }
+            else if (cmd == "disconnect") {
+                let [session_id] = params;
+                Deno.v8inspect.v8inspect_disconnect(session_id);
+            }
+            else if (cmd == "msg") {
+                let [session_id, message] = params;
+                //Deno.skynet.v8inspector_message(session_id, new TextEncoder().encode(message));
+                Deno.core.inspector_message(session_id, new TextEncoder().encode(message));
+            }
+        });
+    },
+    disable: () => {
+        // unreg_debugcmd("v8inspector")
+        skynet.send(".v8_inspector", skynet.PTYPE_NAME.LUA, "disable", skynet.self());
+    },
+};

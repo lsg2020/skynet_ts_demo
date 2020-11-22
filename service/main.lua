@@ -3,13 +3,16 @@ require "skynet.manager"
 
 skynet.start(function()
     skynet.newservice("debug_console", 8000)
+    skynet.newservice("v8_inspector", "0.0.0.0:9527")
 
     skynet.dispatch("lua", function(session, source, cmd, ...)
         print("lua recv call", cmd, ...)
         skynet.retpack(...)
     end)
 
-    local test = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test")
+    local testjs = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test1", "192.168.163.128:9529")
+
+    local test = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test", "192.168.163.128:9528")
     local add_ret, a, b = skynet.call(".test", "lua", "add", 1, 100)
     assert(add_ret.result == 101 and a == 1 and b == 100)
     print("sleep", skynet.now())
@@ -17,9 +20,8 @@ skynet.start(function()
     assert(sleep_ret == 100)
     print("sleep_ret", skynet.now())
     local call_ret = skynet.call(".test", "lua", "call", skynet.self(), "test1234", 1, 2, 3, 4)
-    assert(call_ret[1] == 1 and call_ret[4] == 4)
+    assert(call_ret[1] == 1 and call_ret[4] == 4)    
 
-    skynet.kill(test)
     skynet.sleep(200)
 
     print("test lua msg")
@@ -33,11 +35,10 @@ skynet.start(function()
     skynet.sleep(500)
 
     print("test js msg")
-    local testjs = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test1")
     skynet.newservice("test_send", testjs, 2000)
     skynet.newservice("test_send", testjs, 2000)
     skynet.newservice("test_send", testjs, 2000)
     skynet.sleep(2000)
-    skynet.kill(testjs)
+    -- skynet.kill(testjs)
 
 end)
