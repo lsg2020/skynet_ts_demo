@@ -13,7 +13,7 @@
 ![console](https://github.com/lsg2020/skynet_ts_demo/blob/master/doc/images/console.jpg)
 ![breakpoint](https://github.com/lsg2020/skynet_ts_demo/blob/master/doc/images/breakpoint.jpg)
 ![memory](https://github.com/lsg2020/skynet_ts_demo/blob/master/doc/images/memory.jpg)
-![cpuprofile](https://github.com/lsg2020/skynet_ts_demo/blob/master/doc/images/cpuprofile.jpg)
+![cpuprofile](https://github.com/lsg2020/skynet_ts_demo/blob/master/doc/images/cpuprofile1.jpg)
 
 ## 问题
 * [vscode附加调试失败](https://github.com/microsoft/vscode-js-debug/issues/580)
