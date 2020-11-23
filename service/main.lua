@@ -10,9 +10,9 @@ skynet.start(function()
         skynet.retpack(...)
     end)
 
-    local testjs = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test1", "192.168.163.128:9529")
+    local testjs = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test1", "127.0.0.1:9529")
 
-    local test = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test", "192.168.163.128:9528")
+    local test = skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test", "127.0.0.1:9528")
     local add_ret, a, b = skynet.call(".test", "lua", "add", 1, 100)
     assert(add_ret.result == 101 and a == 1 and b == 100)
     print("sleep", skynet.now())
