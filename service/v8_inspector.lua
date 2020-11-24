@@ -14,18 +14,17 @@ local PTYPE_INSPECT = 101
 local services = {}
 
 local command = {}
-function command.enable(addr, name, listen_addr)
+function command.enable(addr, name)
     print("v8_inspector enable:", addr)
     if services[addr] then
         skynet.retpack(
             skynet.self(), 
             PTYPE_INSPECT, 
-            string.format("ws://localhost:%s/pause/%s", listen_port, addr),
-            string.format("ws://localhost:%s/resume/%s", listen_port, addr)
+            string.format("ws://%s/pause/%s", listen_addr, addr),
+            string.format("ws://%s/resume/%s", listen_addr, addr)
         )
         return;    
     end
-    local http_socket = socket.listen(listen_addr:match("([^:]+):(%d+)"))
 
     local service = {
         addr = addr,
@@ -33,102 +32,15 @@ function command.enable(addr, name, listen_addr)
         listen_addr = listen_addr,
         sessions = {},
         websockets = {},
-        http_socket = http_socket,
+        devtools = string.format("devtools://devtools/bundled/inspector.html?v8only=true&ws=%s/ws/%s", listen_addr, addr),
     }
     services[addr] = service;
-
-    local close_ws = function(id)
-        local session_id = service.websockets[id]
-        if not session_id then return end
-
-        skynet.send(service.addr, "debug", "v8inspector", "disconnect", session_id)
-
-        service.websockets[id] = nil
-        service.sessions[session_id] = nil
-
-        if next(service.sessions) == nil and service.proxy then
-            websocket.write(service.proxy, "quit", "text")
-            socket.close(service.proxy)
-            service.proxy = nil
-        end
-    end
-
-    local handler = {
-        connect = function(id)
-            print("connect", id)
-            local session_id = skynet.call(service.addr, "debug", "v8inspector", "connect", id)
-            assert(session_id ~= 0)
-            service.sessions[session_id] = id
-            service.websockets[id] = session_id
-        end,
-        message = function(id, msg)
-            -- print("message", id, msg)
-            if service.proxy then
-                websocket.write(service.proxy, service.websockets[id]..msg, "text")
-            else
-                skynet.send(service.addr, "debug", "v8inspector", "msg", service.websockets[id], msg)
-            end
-        end,
-        close = function(id)
-            print("close", id)
-            close_ws(id)
-        end,
-        error = function(id)
-            print("error", id)
-            close_ws(id)    
-        end,
-    }
-
-    local devtools = string.format("devtools://devtools/bundled/inspector.html?v8only=true&ws=%s/ws/%s", listen_addr, addr)
-    service.devtools = devtools
-    local debug_template = {
-        ["_DEBUG_ID_"] = string.format("%d", addr),
-        ["_DEBUG_NAME_"] = string.format("%s:%s", name, addr),
-        ["_DEBUG_ADDR_"] = string.format("%s/ws/%s", listen_addr, addr),
-        ["_DEBUG_DEVTOOLS_"] = devtools,
-    }
-    local template = [[
-        {
-            "type": "node",
-            "id": "_DEBUG_ID_",
-            "title": "_DEBUG_NAME_ debug tools for V8",
-            "devtoolsFrontendUrl": "_DEBUG_DEVTOOLS_",
-            "devtoolsFrontendUrlCompat": "_DEBUG_DEVTOOLS_",
-            "webSocketDebuggerUrl": "ws://_DEBUG_ADDR_"
-        }
-    ]]
-    for k, v in pairs(debug_template) do
-        template = string.gsub(template, k, v)
-    end
-
-    local http_router = router.new()
-    http_router:get("/ws/:addr", function(request)
-        local addr = tonumber(request.addr)
-        assert(addr == service.addr)
-        return http_helper.upgrade(handler, request)
-    end)
-    http_router:get("/json", function(request)
-        http_helper.response(request.id, 200, "[" .. template .. "]")
-    end)
-    http_router:get("/json/version", function(request)
-        http_helper.response(request.id, 200, [[
-            {
-                "Browser": "skynet_ts/0.1.0",
-                "Protocol-Version": "1.3"
-            } 
-        ]])
-    end)
-
-    socket.start(http_socket, function(id, addr)
-        socket.start(id)
-        skynet.fork(http_helper.dispatch, http_router, id, addr)
-    end)
 
     skynet.retpack(
         skynet.self(), 
         PTYPE_INSPECT, 
-        string.format("ws://localhost:%s/pause/%s", listen_port, addr),
-        string.format("http://localhost:%s/resume/%s", listen_port, addr)
+        string.format("ws://%s/pause/%s", listen_addr, addr),
+        string.format("http://%s/resume/%s", listen_addr, addr)
     )
 
     skynet.fork(function()
@@ -145,7 +57,6 @@ function command.disable(addr)
     end
 
     services[addr] = nil
-    socket.close(service.http_socket)
     if service.proxy then
         socket.close(service.proxy)
     end
@@ -242,6 +153,93 @@ http_router:get("/resume/:addr", function(request)
     socket.close(proxy)
     http_helper.response(request.id, 200, "ok")
 end)
+
+http_router:get("/ws/:addr", function(request)
+    local addr = tonumber(request.addr)
+    local service = services[addr]
+    assert(service)
+
+    local close_ws = function(id)
+        local session_id = service.websockets[id]
+        if not session_id then return end
+    
+        skynet.send(service.addr, "debug", "v8inspector", "disconnect", session_id)
+    
+        service.websockets[id] = nil
+        service.sessions[session_id] = nil
+    
+        if next(service.sessions) == nil and service.proxy then
+            websocket.write(service.proxy, "quit", "text")
+            socket.close(service.proxy)
+            service.proxy = nil
+        end
+    end
+    
+    local handler = {
+        connect = function(id)
+            print("connect", id)
+            local session_id = skynet.call(service.addr, "debug", "v8inspector", "connect", id)
+            assert(session_id ~= 0)
+            service.sessions[session_id] = id
+            service.websockets[id] = session_id
+        end,
+        message = function(id, msg)
+            -- print("message", id, msg)
+            if service.proxy then
+                websocket.write(service.proxy, service.websockets[id]..msg, "text")
+            else
+                skynet.send(service.addr, "debug", "v8inspector", "msg", service.websockets[id], msg)
+            end
+        end,
+        close = function(id)
+            print("close", id)
+            close_ws(id)
+        end,
+        error = function(id)
+            print("error", id)
+            close_ws(id)    
+        end,
+    }    
+
+    return http_helper.upgrade(handler, request)
+end)
+http_router:get("/json", function(request)
+    local response = {}
+    for addr, service in pairs(services) do
+        local debug_template = {
+            ["_DEBUG_ID_"] = string.format("%d", addr),
+            ["_DEBUG_NAME_"] = string.format("%s:%s", name, addr),
+            ["_DEBUG_ADDR_"] = string.format("%s/ws/%s", listen_addr, addr),
+            ["_DEBUG_DEVTOOLS_"] = service.devtools,
+        }
+        local template = [[
+            {
+                "type": "node",
+                "id": "_DEBUG_ID_",
+                "title": "_DEBUG_NAME_ debug tools for V8",
+                "devtoolsFrontendUrl": "_DEBUG_DEVTOOLS_",
+                "devtoolsFrontendUrlCompat": "_DEBUG_DEVTOOLS_",
+                "webSocketDebuggerUrl": "ws://_DEBUG_ADDR_"
+            }
+        ]]
+        for k, v in pairs(debug_template) do
+            template = string.gsub(template, k, v)
+        end
+        
+        table.insert(response, template)
+    end
+
+    http_helper.response(request.id, 200, "[" .. table.content(response, ",") .. "]")
+end)
+http_router:get("/json/version", function(request)
+    http_helper.response(request.id, 200, [[
+        {
+            "Browser": "skynet_ts/0.1.0",
+            "Protocol-Version": "1.3"
+        } 
+    ]])
+end)
+
 
 skynet.start(function ()
     local http_socket = socket.listen(listen_ip, listen_port)

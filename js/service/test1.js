@@ -5,11 +5,8 @@ let total = 0;
 let begin_ts = 0;
 let ts = 0;
 skynet.start(() => {
-    let listen_debug = JS_INIT_ARGS.split(" ")[1];
     let service_name = JS_INIT_ARGS.split(" ")[0];
-    if (listen_debug) {
-        debug.v8inspector.enable(service_name, listen_debug);
-    }
+    debug.v8inspector.enable(service_name);
     skynet.dispatch("lua", () => {
         amount_pre_sec++;
         total++;

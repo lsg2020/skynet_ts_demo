@@ -109,12 +109,12 @@ async function _debug_dispatch(context, cmd, ...params) {
     await f(context, ...params);
 }
 export let v8inspector = {
-    enable: async (name, listen) => {
-        let [proxy_addr, proty_ptype, pause_addr, resume_addr] = await skynet.call(".v8_inspector", skynet.PTYPE_NAME.LUA, "enable", skynet.self(), name, listen);
+    enable: async (name) => {
+        let [proxy_addr, proty_ptype, pause_addr, resume_addr] = await skynet.call(".v8_inspector", skynet.PTYPE_NAME.LUA, "enable", skynet.self(), name);
         reg_debugcmd("v8inspector", (context, cmd, ...params) => {
             if (cmd == "enable") {
-                let [name, listen] = params;
-                v8inspector.enable(name, listen);
+                let [name] = params;
+                v8inspector.enable(name);
             }
             else if (cmd == "disable") {
                 v8inspector.disable();

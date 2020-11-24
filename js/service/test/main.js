@@ -22,11 +22,8 @@ async function test() {
     }
 }
 skynet.start(async () => {
-    let listen_debug = JS_INIT_ARGS.split(" ")[1];
     let service_name = JS_INIT_ARGS.split(" ")[0];
-    if (listen_debug) {
-        debug.v8inspector.enable(service_name, listen_debug);
-    }
+    debug.v8inspector.enable(service_name);
     skynet.dispatch("lua", dispatch_lua);
     skynet.register(".test");
     test();
