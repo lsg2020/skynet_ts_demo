@@ -23,15 +23,14 @@ export let PTYPE_NAME = {
     ERROR: "error",
     DEBUG: "debug",
 };
-let shared_bytes;
 let session_id_callback = new Map(); // session -> [resolve, reject]
 let watching_response = new Map(); // session -> addr
 let watching_request = new Map(); // session -> addr
 let unresponse = new Map(); // call session -> [addr, reject]
 let sleep_session = new Map(); // token -> session
 let next_dispatch_id = 0;
-let _unknow_request = function (session, source, bytes, sz, prototype) {
-    skynet_rt.error(`Unknown request (${prototype}): ${string_unpack(bytes, sz)}`);
+let _unknow_request = function (session, source, msg, sz, prototype) {
+    skynet_rt.error(`Unknown request (${prototype}): ${string_unpack(msg, sz)}`);
     throw new Error(`Unknown session : ${session} from ${source.toString(16)}`);
 };
 export function dispatch_unknown_request(unknown) {
@@ -39,8 +38,8 @@ export function dispatch_unknown_request(unknown) {
     _unknow_request = unknown;
     return prev;
 }
-let _unknow_response = function (session, source, bytes, sz) {
-    skynet_rt.error(`Response message : ${string_unpack(bytes, sz)}`);
+let _unknow_response = function (session, source, msg, sz) {
+    skynet_rt.error(`Response message : ${string_unpack(msg, sz)}`);
     throw new Error(`Unknown session : ${session} from ${source.toString(16)}`);
 };
 export function dispatch_unknown_response(unknown) {
@@ -77,17 +76,36 @@ function _error_dispatch(error_session, error_source) {
         }
     }
 }
-async function dispatch_message(prototype, session, source, sz, new_shared) {
-    if (!shared_bytes || new_shared) {
-        shared_bytes = new Uint8Array(Deno.core.shared);
+const SHARED_MIN_SZ = 128;
+const SHARED_MAX_SZ = 64 * 1024;
+let shared_bytes;
+export function fetch_message(msg, sz) {
+    if (!shared_bytes || shared_bytes.length < sz) {
+        let alloc_sz = SHARED_MIN_SZ;
+        if (shared_bytes) {
+            alloc_sz = shared_bytes.length * 2;
+        }
+        alloc_sz = Math.ceil(sz / alloc_sz) * alloc_sz;
+        if (alloc_sz >= SHARED_MAX_SZ) {
+            alloc_sz = Math.ceil(sz / SHARED_MAX_SZ) * SHARED_MAX_SZ;
+        }
+        else if (alloc_sz < SHARED_MIN_SZ) {
+            alloc_sz = SHARED_MIN_SZ;
+        }
+        shared_bytes = new Uint8Array(alloc_sz);
     }
+    if (sz > 0)
+        sz = Deno.skynet.fetch_message(msg, sz, shared_bytes.buffer);
+    return shared_bytes;
+}
+async function dispatch_message(prototype, session, source, msg, sz) {
     if (prototype == PTYPE_ID.RESPONSE) {
         let response_func = session_id_callback.get(session);
         if (!response_func) {
-            return _unknow_response(session, source, shared_bytes, sz);
+            return _unknow_response(session, source, msg, sz);
         }
         session_id_callback.delete(session);
-        response_func[0]([shared_bytes, sz]);
+        response_func[0]([msg, sz]);
     }
     else {
         let p = proto.get(prototype);
@@ -95,7 +113,7 @@ async function dispatch_message(prototype, session, source, sz, new_shared) {
             if (session != 0) {
                 return skynet_rt.send(source, PTYPE_ID.ERROR, session);
             }
-            return _unknow_request(session, source, shared_bytes, sz, prototype);
+            return _unknow_request(session, source, msg, sz, prototype);
         }
         let context = {
             proto: p,
@@ -106,7 +124,7 @@ async function dispatch_message(prototype, session, source, sz, new_shared) {
         if (session) {
             watching_response.set(session, source);
         }
-        await p.dispatch(context, ...p.unpack(shared_bytes, sz));
+        await p.dispatch(context, ...p.unpack(msg, sz));
         if (session && watching_response.has(session)) {
             watching_response.delete(session);
             skynet_rt.error(`Maybe forgot response session:${session} proto:${p.name} source:${source}`);
@@ -206,8 +224,8 @@ async function _yield_call(session, addr) {
     });
     watching_request.set(session, addr);
     try {
-        let [bytes, sz] = (await promise);
-        return [bytes, sz];
+        let rsp = (await promise);
+        return rsp;
     }
     catch {
         throw new Error("call failed");
@@ -312,7 +330,8 @@ export function assert(cond, msg) {
         throw err;
     }
 }
-export function string_unpack(bytes, sz) {
+export function string_unpack(msg, sz) {
+    let bytes = fetch_message(msg, sz);
     return [new TextDecoder().decode(bytes.slice(0, sz))];
 }
 export function string_pack(msg) {
@@ -326,7 +345,9 @@ register_protocol({
     id: PTYPE_ID.LUA,
     name: PTYPE_NAME.LUA,
     pack: lua_seri.encode,
-    unpack: (bytes, sz) => { return lua_seri.decode(bytes, sz); },
+    unpack: (msg, sz) => {
+        return lua_seri.decode(fetch_message(msg, sz), sz);
+    },
     dispatch: undefined,
 });
 register_protocol({
