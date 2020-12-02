@@ -22,15 +22,16 @@ export let PTYPE_NAME = {
     RESPONSE: "response",
     ERROR: "error",
     DEBUG: "debug",
+    SOCKET: "socket",
 };
 let session_id_callback = new Map(); // session -> [resolve, reject]
 let watching_response = new Map(); // session -> addr
 let watching_request = new Map(); // session -> addr
 let unresponse = new Map(); // call session -> [addr, reject]
 let sleep_session = new Map(); // token -> session
-let next_dispatch_id = 0;
+let next_dispatch_id = 1;
 let _unknow_request = function (session, source, msg, sz, prototype) {
-    skynet_rt.error(`Unknown request (${prototype}): ${string_unpack(msg, sz)}`);
+    skynet_rt.error(`Unknown request (${prototype}): ${sz}`);
     throw new Error(`Unknown session : ${session} from ${source.toString(16)}`);
 };
 export function dispatch_unknown_request(unknown) {
@@ -39,7 +40,7 @@ export function dispatch_unknown_request(unknown) {
     return prev;
 }
 let _unknow_response = function (session, source, msg, sz) {
-    skynet_rt.error(`Response message : ${string_unpack(msg, sz)}`);
+    skynet_rt.error(`Response message : ${sz}`);
     throw new Error(`Unknown session : ${session} from ${source.toString(16)}`);
 };
 export function dispatch_unknown_response(unknown) {
@@ -98,6 +99,13 @@ export function fetch_message(msg, sz) {
         sz = Deno.skynet.fetch_message(msg, sz, shared_bytes.buffer);
     return shared_bytes;
 }
+export function gen_token() {
+    let token = next_dispatch_id++;
+    if (token >= 0xffffffff) {
+        next_dispatch_id = 1;
+    }
+    return token;
+}
 async function dispatch_message(prototype, session, source, msg, sz) {
     if (prototype == PTYPE_ID.RESPONSE) {
         let response_func = session_id_callback.get(session);
@@ -119,7 +127,7 @@ async function dispatch_message(prototype, session, source, msg, sz) {
             proto: p,
             session,
             source,
-            dispatch_id: next_dispatch_id++,
+            dispatch_id: gen_token(),
         };
         if (session) {
             watching_response.set(session, source);
@@ -329,6 +337,7 @@ export function assert(cond, msg) {
         let err = msg ? new Error(`assert failed ${cond} ${msg}`) : new Error(`assert failed ${cond}`);
         throw err;
     }
+    return cond;
 }
 export function string_unpack(msg, sz) {
     let bytes = fetch_message(msg, sz);
