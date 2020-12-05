@@ -80,7 +80,7 @@ export function listen(host, port, backlog) {
         [host, port] = _address_port(host, port);
         port = Number(port);
     }
-    let id = skynet_rt.socket_listen(host, port, backlog || 0);
+    let id = skynet_rt.socket_listen(host, port, backlog || 32);
     if (id < 0) {
         skynet.error(`Listen error`);
     }
@@ -171,8 +171,91 @@ export function warning(id, callback) {
     }
     return old;
 }
+export function header(msg, len) {
+    if (len > 4 || len < 1) {
+        throw new Error(`Invalid read ${msg.slice(0, len)}`);
+    }
+    let sz = 0;
+    for (let i = 0; i < len; i++) {
+        sz <<= 8;
+        sz |= msg[i];
+    }
+    return sz;
+}
+export async function read(id, sz) {
+    let s = socket_pool.get(id);
+    skynet.assert(s);
+    let sb = s.buffer;
+    if (!sz) {
+        // read some bytes
+        if (sb.size) {
+            return [true, ..._read_all(sb)];
+        }
+        if (!s.connected) {
+            return [false];
+        }
+        skynet.assert(!s.read_required);
+        s.read_required = 0;
+        await suspend(s);
+        if (sb.size) {
+            return [true, ..._read_all(sb)];
+        }
+        return [false];
+    }
+    let ret = _pop_buffer(sb, sz);
+    if (ret) {
+        return [true, ret, sz];
+    }
+    if (!s.connected) {
+        return [false, ..._read_all(sb)];
+    }
+    skynet.assert(!s.read_required);
+    s.read_required = sz;
+    await suspend(s);
+    ret = _pop_buffer(sb, sz);
+    if (ret) {
+        return [true, ret, sz];
+    }
+    else {
+        return [false, ..._read_all(sb)];
+    }
+}
+export async function readall(id) {
+    let s = socket_pool.get(id);
+    skynet.assert(s);
+    let sb = s.buffer;
+    if (!s.connecting) {
+        return _read_all(sb);
+    }
+    skynet.assert(!s.read_required_skip);
+    s.read_required = true;
+    await suspend(s);
+    skynet.assert(!s.connected);
+    return _read_all(sb);
+}
+export async function readline(id, sep = '\n') {
+    let s = socket_pool.get(id);
+    skynet.assert(s);
+    let ret = _read_line(s, false, sep);
+    if (ret) {
+        return [true, ...ret];
+    }
+    if (!s.connected) {
+        return [false, ..._read_all(s.buffer)];
+    }
+    skynet.assert(!s.read_required_skip);
+    s.read_required = sep;
+    await suspend(s);
+    if (s.connected) {
+        return [true, ..._read_line(s, false, sep)];
+    }
+    else {
+        return [false, ..._read_all(s.buffer)];
+    }
+}
 let socket_pool = new Map();
-let buffer_pool = {};
+let buffer_pool = new Array();
+let socket_message = Object.create(null);
 const SKYNET_SOCKET_TYPE_DATA = 1;
 const SKYNET_SOCKET_TYPE_CONNECT = 2;
 const SKYNET_SOCKET_TYPE_CLOSE = 3;
@@ -180,7 +263,6 @@ const SKYNET_SOCKET_TYPE_ACCEPT = 4;
 const SKYNET_SOCKET_TYPE_ERROR = 5;
 const SKYNET_SOCKET_TYPE_UDP = 6;
 const SKYNET_SOCKET_TYPE_WARNING = 7;
-let socket_message = Object.create(null);
 socket_message[SKYNET_SOCKET_TYPE_DATA] = (id, size, data) => {
     let s = socket_pool.get(id);
     if (!s) {
@@ -188,7 +270,7 @@ socket_message[SKYNET_SOCKET_TYPE_DATA] = (id, size, data) => {
         _pack_drop(data, size);
         return;
     }
-    let sz = _pack_push(s.buffer, buffer_pool, data, size);
+    let sz = _pack_push(s.buffer, data, size);
     let rr = s.read_required;
     let rrt = typeof (rr);
     if (rrt == "number") {
@@ -204,8 +286,11 @@ socket_message[SKYNET_SOCKET_TYPE_DATA] = (id, size, data) => {
             skynet_rt.socket_close(id);
             return;
         }
-        if (rrt == "string") {
-            // TODO read line
+        if (rrt == "string" && _read_line(s, true, rr)) {
+            // read line
+            s.read_required = undefined;
+            s.read_required_skip = undefined;
+            wakeup(s);
         }
     }
 };
@@ -247,7 +332,7 @@ socket_message[SKYNET_SOCKET_TYPE_ERROR] = (id, _ud, err) => {
         s.error = err;
     }
     s.connected = false;
-    skynet_rt.socket_shutdown(id);
+    _shutdown(id);
     wakeup(s);
 };
 socket_message[SKYNET_SOCKET_TYPE_UDP] = (id, size, data, address) => {
@@ -258,7 +343,7 @@ socket_message[SKYNET_SOCKET_TYPE_UDP] = (id, size, data, address) => {
         return;
     }
     let msg = skynet.fetch_message(data, size);
-    // TODO trash
+    _pack_drop(data, size);
     s.callback(msg, size, address);
 };
 socket_message[SKYNET_SOCKET_TYPE_WARNING] = (id, size) => {
@@ -291,14 +376,195 @@ async function suspend(s) {
         skynet.wakeup(s.closing);
     }
 }
-function _pack_drop(data, size) {
-    // TODO
+const LARGE_PAGE_NODE = 12;
+function _pack_push(sb, data, sz) {
+    let free_node = buffer_pool[0];
+    if (!free_node) {
+        let tsz = buffer_pool.length;
+        if (tsz == 0) {
+            tsz++;
+        }
+        let size = 8;
+        if (tsz <= LARGE_PAGE_NODE - 3) {
+            size <<= tsz;
+        }
+        else {
+            size <<= LARGE_PAGE_NODE - 3;
+        }
+        let pool = _pool_new(size);
+        free_node = pool;
+        buffer_pool[tsz] = pool;
+    }
+    buffer_pool[0] = free_node.next;
+    free_node.msg = data;
+    free_node.sz = sz;
+    free_node.next = undefined;
+    if (!sb.head) {
+        skynet.assert(!sb.tail);
+        sb.head = free_node;
+        sb.tail = free_node;
+    }
+    else {
+        sb.tail.next = free_node;
+        sb.tail = free_node;
+    }
+    sb.size += sz;
+    return sb.size;
 }
-function _pack_push(buffer, buffer_pool, data, size) {
-    return 0;
+function _node_free(sb) {
+    let free_node = sb.head;
+    sb.offset = 0;
+    sb.head = free_node.next;
+    if (!sb.head) {
+        sb.tail = undefined;
+    }
+    free_node.next = buffer_pool[0];
+    skynet_rt.free(free_node.msg);
+    free_node.msg = 0n;
+    free_node.sz = 0;
+    buffer_pool[0] = free_node;
+}
+function _pop_message(sb, sz, skip) {
+    let read_sz = sz;
+    let current = sb.head;
+    if (sz < current.sz - sb.offset) {
+        let msg = _pack_fetch(current.msg + BigInt(sb.offset), sz - skip);
+        sb.offset += sz;
+        sb.size -= read_sz;
+        return msg;
+    }
+    if (sz == current.sz - sb.offset) {
+        let msg = _pack_fetch(current.msg + BigInt(sb.offset), sz - skip);
+        _node_free(sb);
+        sb.size -= read_sz;
+        return msg;
+    }
+    let msg = _pack_fetch_init(sz);
+    let offset = 0;
+    while (true) {
+        let bytes = current.sz - sb.offset;
+        if (bytes >= sz) {
+            if (sz > skip) {
+                let fetch_sz = sz - skip;
+                _pack_fetch(current.msg + BigInt(sb.offset), fetch_sz, offset);
+                offset += fetch_sz;
+            }
+            sb.offset += sz;
+            if (bytes == sz) {
+                _node_free(sb);
+            }
+            break;
+        }
+        let real_sz = sz - skip;
+        if (real_sz > 0) {
+            let fetch_sz = (real_sz < bytes) ? real_sz : bytes;
+            _pack_fetch(current.msg + BigInt(sb.offset), fetch_sz, offset);
+            offset += fetch_sz;
+        }
+        _node_free(sb);
+        sz -= bytes;
+        if (sz == 0) {
+            break;
+        }
+        current = sb.head;
+        skynet.assert(current);
+    }
+    sb.size -= read_sz;
+    return msg;
+}
+function _pop_buffer(sb, sz) {
+    if (!sb) {
+        throw new Error(`Need buffer object at param 1`);
+    }
+    if (sb.size < sz || sz == 0) {
+        return;
+    }
+    else {
+        let msg = _pop_message(sb, sz, 0);
+        return msg;
+    }
+}
+function _read_all(sb, skip = 0, peek = false) {
+    if (!sb) {
+        throw new Error(`Need buffer object at param 1`);
+    }
+    let sb_offset = sb.offset;
+    let sz = sb.size > skip ? sb.size - skip : 0;
+    let msg = _pack_fetch_init(sz);
+    let offset = 0;
+    let current = sb.head;
+    while (current) {
+        let pack_sz = current.sz - sb_offset;
+        if (skip < pack_sz) {
+            _pack_fetch(current.msg + BigInt(sb_offset + skip), pack_sz - skip, offset);
+            offset += pack_sz - skip;
+        }
+        skip = skip > pack_sz ? skip - pack_sz : 0;
+        sb_offset = 0;
+        current = current.next;
+        if (!peek) {
+            _node_free(sb);
+        }
+    }
+    if (!peek) {
+        sb.size = 0;
+    }
+    return [msg, sz];
+}
+function _read_line(s, check, sep) {
+    let sb = s.buffer;
+    if (!sb) {
+        throw new Error(`Need buffer object at param 1`);
+    }
+    let current = sb.head;
+    if (!current) {
+        return false;
+    }
+    let sep_buffer = new TextEncoder().encode(sep); // TODO
+    let find_index = -1;
+    let skip = s.read_required_skip || 0;
+    let [msg, sz] = _read_all(sb, skip, true);
+    let check_end = (sz > sep_buffer.length ? sz - sep_buffer.length : 0);
+    for (let i = 0; i < check_end; i++) {
+        let match = true;
+        for (let j = 0; j < sep_buffer.length; j++) {
+            if (msg[i + j] != sep_buffer[j]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            find_index = i + skip;
+            break;
+        }
+    }
+    if (check) {
+        if (find_index >= 0) {
+            return true;
+        }
+        else {
+            s.read_required_skip = skip + (check_end ? check_end + 1 : 0);
+            return false;
+        }
+    }
+    else {
+        if (find_index >= 0) {
+            let msg = _pop_message(sb, find_index + sep_buffer.length, sep_buffer.length);
+            return [msg, find_index];
+        }
+        else {
+            return false;
+        }
+    }
 }
 function _buffer_free(s) {
-    // TODO
+    let sb = s.buffer;
+    if (!sb) {
+        return;
+    }
+    while (sb.head) {
+        _node_free(sb);
+    }
 }
 function _buffer_new() {
     let buffer = {
@@ -306,6 +572,26 @@ function _buffer_new() {
         offset: 0,
     };
     return buffer;
+}
+function _pool_new(sz) {
+    let pool = undefined;
+    for (let i = 1; i < sz; i++) {
+        pool = {
+            msg: 0n,
+            sz: 0,
+            next: pool,
+        };
+    }
+    return pool;
+}
+function _pack_drop(data, size) {
+    skynet_rt.free(data);
+}
+function _pack_fetch_init(sz) {
+    return skynet.fetch_message(0n, sz, 0, true);
+}
+function _pack_fetch(msg, sz, offset = 0) {
+    return skynet.fetch_message(msg, sz, offset);
 }
 function _close(id) {
     skynet_rt.socket_close(id);
@@ -325,7 +611,7 @@ function _error(s) {
 }
 async function _connect(id, func) {
     let buffer;
-    if (func) {
+    if (!func) {
         buffer = _buffer_new();
     }
     let s = {
