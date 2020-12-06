@@ -234,9 +234,10 @@ export async function readall(id) {
     return _read_all(sb);
 }
 export async function readline(id, sep = '\n') {
+    let sep_buffer = new TextEncoder().encode(sep);
     let s = socket_pool.get(id);
     skynet.assert(s);
-    let ret = _read_line(s, false, sep);
+    let ret = _read_line(s, false, sep_buffer);
     if (ret) {
         return [true, ...ret];
     }
@@ -244,14 +245,42 @@ export async function readline(id, sep = '\n') {
         return [false, ..._read_all(s.buffer)];
     }
     skynet.assert(!s.read_required_skip);
-    s.read_required = sep;
+    s.read_required = sep_buffer;
     await suspend(s);
     if (s.connected) {
-        return [true, ..._read_line(s, false, sep)];
+        return [true, ..._read_line(s, false, sep_buffer)];
     }
     else {
         return [false, ..._read_all(s.buffer)];
     }
+}
+let text_encoder = new TextEncoder();
+function get_buffer(buffer, sz) {
+    let t = typeof (buffer);
+    if (t == "bigint") {
+        return [buffer, sz];
+    }
+    else if (t == "string") {
+        return skynet_rt.socket_alloc_msg(text_encoder.encode(buffer));
+    }
+    else {
+        return skynet_rt.socket_alloc_msg(...buffer);
+    }
+}
+export function write(id, buffer, sz) {
+    let [msg, len] = get_buffer(buffer, sz);
+    let err = skynet_rt.socket_send(id, msg, len);
+    return !err;
+}
+export function lwrite(id, buffer, sz) {
+    let [msg, len] = get_buffer(buffer, sz);
+    let err = skynet_rt.socket_send_lowpriority(id, msg, len);
+    return !err;
+}
+export function sendto(id, address, buffer, sz) {
+    let [msg, len] = get_buffer(buffer, sz);
+    let err = skynet_rt.socket_sendto(id, address, msg, len);
+    return !err;
 }
 let socket_pool = new Map();
 let buffer_pool = new Array();
@@ -286,7 +315,7 @@ socket_message[SKYNET_SOCKET_TYPE_DATA] = (id, size, data) => {
             skynet_rt.socket_close(id);
             return;
         }
-        if (rrt == "string" && _read_line(s, true, rr)) {
+        if (rr instanceof Uint8Array && _read_line(s, true, rr)) {
             // read line
             s.read_required = undefined;
             s.read_required_skip = undefined;
@@ -511,7 +540,7 @@ function _read_all(sb, skip = 0, peek = false) {
     }
     return [msg, sz];
 }
-function _read_line(s, check, sep) {
+function _read_line(s, check, sep_buffer) {
     let sb = s.buffer;
     if (!sb) {
         throw new Error(`Need buffer object at param 1`);
@@ -520,11 +549,10 @@ function _read_line(s, check, sep) {
     if (!current) {
         return false;
     }
-    let sep_buffer = new TextEncoder().encode(sep); // TODO
     let find_index = -1;
     let skip = s.read_required_skip || 0;
     let [msg, sz] = _read_all(sb, skip, true);
-    let check_end = (sz > sep_buffer.length ? sz - sep_buffer.length : 0);
+    let check_end = (sz >= sep_buffer.length ? sz - sep_buffer.length + 1 : 0);
     for (let i = 0; i < check_end; i++) {
         let match = true;
         for (let j = 0; j < sep_buffer.length; j++) {
@@ -543,7 +571,7 @@ function _read_line(s, check, sep) {
             return true;
         }
         else {
-            s.read_required_skip = skip + (check_end ? check_end + 1 : 0);
+            s.read_required_skip = skip + check_end;
             return false;
         }
     }
