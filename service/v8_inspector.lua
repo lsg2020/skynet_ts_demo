@@ -124,6 +124,12 @@ http_router:get("/pause/:addr", function(request)
         connect = function(id)
             print("pause connect", id)
             service.proxy = request.id
+
+            if next(service.sessions) == nil and service.proxy then
+                websocket.write(service.proxy, "quit", "text")
+                socket.close(service.proxy)
+                service.proxy = nil
+            end
         end,
         close = function(id)
             print("pause close", id)
