@@ -250,6 +250,7 @@ export async function read(id: SOCKET_ID, sz?: number, buffer?: Uint8Array, offs
         return [false]
     }
 
+    skynet.assert(sz > 0, "socket invalid read size");
     let ret = _pop_buffer(sb, sz, buffer, offset);
     if (ret) {
         return [true, ret, sz];
@@ -305,8 +306,10 @@ export async function readline(id: SOCKET_ID, sep: string = '\n', buffer?: Uint8
     }
 }
 
+export type BUFFER_TYPE = Uint8Array|MSGPTR|Uint8Array[]|string;
+
 let text_encoder = new TextEncoder();
-function get_buffer(buffer: Uint8Array|MSGPTR|Uint8Array[]|string, sz?: number): [MSGPTR, number] {
+function get_buffer(buffer: BUFFER_TYPE, sz?: number): [MSGPTR, number] {
     let t = typeof(buffer);
     if (t == "bigint") {
         return [buffer as MSGPTR, sz!];
@@ -323,7 +326,7 @@ export function write(id: SOCKET_ID, buffer: MSGPTR, sz: number): boolean;
 export function write(id: SOCKET_ID, buffer: Uint8Array): boolean;
 export function write(id: SOCKET_ID, buffer: Uint8Array[]): boolean;
 export function write(id: SOCKET_ID, buffer: string): boolean;
-export function write(id: SOCKET_ID, buffer: Uint8Array|MSGPTR|Uint8Array[]|string, sz?: number): boolean {
+export function write(id: SOCKET_ID, buffer: BUFFER_TYPE, sz?: number): boolean {
     let [msg, len] = get_buffer(buffer, sz);
     let err = skynet_rt.socket_send(id, msg, len);
     return !err;
@@ -333,7 +336,7 @@ export function lwrite(id: SOCKET_ID, buffer: MSGPTR, sz: number): boolean;
 export function lwrite(id: SOCKET_ID, buffer: Uint8Array): boolean;
 export function lwrite(id: SOCKET_ID, buffer: Uint8Array[]): boolean;
 export function lwrite(id: SOCKET_ID, buffer: string): boolean;
-export function lwrite(id: SOCKET_ID, buffer: Uint8Array|MSGPTR|Uint8Array[]|string, sz?: number): boolean {
+export function lwrite(id: SOCKET_ID, buffer: BUFFER_TYPE, sz?: number): boolean {
     let [msg, len] = get_buffer(buffer, sz);
     let err = skynet_rt.socket_send_lowpriority(id, msg, len);
     return !err;
@@ -343,7 +346,7 @@ export function sendto(id: SOCKET_ID, address: string, buffer: MSGPTR, sz: numbe
 export function sendto(id: SOCKET_ID, address: string, buffer: Uint8Array): boolean;
 export function sendto(id: SOCKET_ID, address: string, buffer: Uint8Array[]): boolean;
 export function sendto(id: SOCKET_ID, address: string, buffer: string): boolean;
-export function sendto(id: SOCKET_ID, address: string, buffer: Uint8Array|MSGPTR|Uint8Array[]|string, sz?: number): boolean {
+export function sendto(id: SOCKET_ID, address: string, buffer: BUFFER_TYPE, sz?: number): boolean {
     let [msg, len] = get_buffer(buffer, sz);
     let err = skynet_rt.socket_sendto(id, address, msg, len);
     return !err;
@@ -414,6 +417,7 @@ socket_message[SKYNET_SOCKET_TYPE_CONNECT] = (id: SOCKET_ID, _ud: number, addr: 
     if (!s) {
         return;
     }
+
     // log remote addr
     s.connected = true;
     wakeup(s);
@@ -423,6 +427,7 @@ socket_message[SKYNET_SOCKET_TYPE_CLOSE] = (id: SOCKET_ID) => {
     if (!s) {
         return;
     }
+
     s.connected = false;
     wakeup(s);
 }
@@ -516,7 +521,7 @@ function _pack_push(sb: SOCKET_BUFFER, data: MSGPTR, sz: number) {
     buffer_pool[0] = free_node.next!;
     free_node.buffer = new Uint8Array(sz);
     free_node.sz = sz;
-    skynet.fetch_message(data, sz, 0, false, free_node.buffer);
+    free_node.buffer = skynet.fetch_message(data, sz, 0, free_node.buffer);
     skynet_rt.free(data);
     free_node.next = undefined;
     if (!sb.head) {
@@ -713,11 +718,15 @@ function _pack_drop(data: MSGPTR, size: number) {
     skynet_rt.free(data);
 }
 function _pack_fetch_init(sz: number, buffer?: Uint8Array, buffer_offset?: number) {
-    return skynet.fetch_message(0n, sz, buffer_offset, true, buffer);
+    if (buffer) {
+        return skynet.fetch_message(0n, sz, buffer_offset, buffer);
+    } else {
+        return skynet.fetch_message(0n, sz, buffer_offset, true);
+    }
 }
 function _pack_fetch(msg: Uint8Array, msg_offset: number, sz: number, buffer?: Uint8Array, buffer_offset?: number) {
     //return skynet.fetch_message(msg, sz, buffer_offset, false, buffer);
-    buffer = skynet.fetch_message(0n, sz, buffer_offset, true, buffer);
+    buffer = skynet.fetch_message(0n, sz, buffer_offset, buffer);
     if (sz < 64) {
         buffer_offset = buffer_offset || 0;
         for (let i=0; i<sz; i++) {

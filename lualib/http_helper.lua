@@ -25,12 +25,7 @@ local function response(id, code, resp)
 end
 
 local function upgrade(handle_agent, request)
-    local tmp = {string.format("GET %s HTTP/1.1", request.path)}
-    for k, v in pairs(request.headers) do
-        table.insert(tmp, string.format("%s:%s", k, v))
-    end
-
-    local ok, err = websocket.accept(request.id, handle_agent, "ws", request.addr, {upgrade = tmp})
+    local ok, err = websocket.accept(request.id, handle_agent, "ws", request.addr, {upgrade = {header = request.headers, url = request.url, method = "GET"}})
     if not ok and handle_agent.error then
         handle_agent.error(request.id, err)
     end
