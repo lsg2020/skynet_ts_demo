@@ -24,7 +24,7 @@ export let PTYPE_NAME = {
     DEBUG: "debug",
     SOCKET: "socket",
 };
-let session_id_callback = new Map(); // session -> [resolve, reject]
+let session_id_callback = new Map(); // session -> [resolve, reject, wakeup]
 let watching_response = new Map(); // session -> addr
 let watching_request = new Map(); // session -> addr
 let unresponse = new Map(); // call session -> [addr, reject]
@@ -78,26 +78,28 @@ function _error_dispatch(error_session, error_source) {
     }
 }
 const SHARED_MIN_SZ = 128;
-const SHARED_MAX_SZ = 64 * 1024;
 let shared_bytes;
-export function fetch_message(msg, sz, offset = 0, init = false) {
-    if (!shared_bytes || shared_bytes.length < sz) {
-        let alloc_sz = SHARED_MIN_SZ;
-        if (shared_bytes) {
-            alloc_sz = shared_bytes.length * 2;
-        }
-        alloc_sz = Math.ceil(sz / alloc_sz) * alloc_sz;
-        if (alloc_sz >= SHARED_MAX_SZ) {
-            alloc_sz = Math.ceil(sz / SHARED_MAX_SZ) * SHARED_MAX_SZ;
-        }
-        else if (alloc_sz < SHARED_MIN_SZ) {
-            alloc_sz = SHARED_MIN_SZ;
-        }
-        shared_bytes = new Uint8Array(alloc_sz);
+export function fetch_message(msg, sz, offset, buffer) {
+    offset = offset || 0;
+    let size = sz + offset;
+    if (!buffer || buffer === true) {
+        size = size < SHARED_MIN_SZ ? SHARED_MIN_SZ : size;
     }
-    if (!init && sz > 0)
-        sz = Deno.skynet.fetch_message(msg, sz, shared_bytes.buffer, offset);
-    return shared_bytes;
+    let dst = !buffer ? shared_bytes : (buffer === true ? new Uint8Array(size) : buffer);
+    if (!dst || dst.length < size) {
+        let alloc_sz = dst ? size * 2 : size;
+        let new_dst = new Uint8Array(alloc_sz);
+        if (buffer) {
+            new_dst.set(buffer);
+        }
+        if (shared_bytes == dst) {
+            shared_bytes = new_dst;
+        }
+        dst = new_dst;
+    }
+    if (msg != 0n && sz > 0)
+        sz = Deno.skynet.fetch_message(msg, sz, dst.buffer, offset);
+    return dst;
 }
 export function gen_token() {
     let token = next_dispatch_id++;
@@ -113,7 +115,8 @@ async function dispatch_message(prototype, session, source, msg, sz) {
             return _unknow_response(session, source, msg, sz);
         }
         session_id_callback.delete(session);
-        response_func[0]([msg, sz]);
+        if (!response_func[2])
+            response_func[0]([msg, sz]);
     }
     else {
         let p = proto.get(prototype);
@@ -140,16 +143,20 @@ async function dispatch_message(prototype, session, source, msg, sz) {
     }
 }
 export function timeout(ti, func) {
-    let session = Number(skynet_rt.command("TIMEOUT", ti).result);
+    let session = Number(skynet_rt.command("TIMEOUT", ti));
     assert(session);
     assert(!session_id_callback.has(session));
     session_id_callback.set(session, [func, func]);
 }
-export function sleep(ti) {
+export async function sleep(ti, token) {
+    token = token || gen_token();
+    let session = Number(skynet_rt.command("TIMEOUT", ti));
+    sleep_session.set(token, session);
     let promise = new Promise((resolve, reject) => {
-        timeout(ti, resolve);
+        session_id_callback.set(session, [resolve, reject]);
     });
-    return promise;
+    await promise;
+    sleep_session.delete(token);
 }
 export async function wait(token) {
     let session = skynet_rt.genid();
@@ -167,6 +174,7 @@ export function wakeup(token) {
     let response_func = session_id_callback.get(session);
     assert(response_func);
     response_func[0]();
+    response_func[2] = true; // BREAK
 }
 export function self() {
     return skynet_rt.addresscommand("REG");
@@ -215,8 +223,8 @@ export function set_env(name, value) {
 }
 export function send(addr, typename, ...params) {
     let p = proto.get(typename);
-    let pack = p.pack(...params) || [];
-    return skynet_rt.send(addr, p.id, 0, ...pack);
+    let pack = p.pack(...params);
+    return skynet_rt.send(addr, p.id, 0, pack);
 }
 export function rawsend(addr, typename, bytes) {
     let p = proto.get(typename);
@@ -245,18 +253,24 @@ async function _yield_call(session, addr) {
 }
 export async function call(addr, typename, ...params) {
     let p = proto.get(typename);
-    let pack = p.pack(...params) || [];
-    let session = skynet_rt.send(addr, p.id, null, ...pack);
+    let pack = p.pack(...params);
+    let session = skynet_rt.send(addr, p.id, null, pack);
     let [bytes, sz] = await _yield_call(session, addr);
     return p.unpack(bytes, sz);
 }
-export function ret(context, ...pack) {
+export function ret(context, pack) {
     if (context.session == 0) {
         // send don't need ret
         return false;
     }
     watching_response.delete(context.session);
-    let ret = skynet_rt.send(context.source, PTYPE_ID.RESPONSE, context.session, ...pack);
+    let ret;
+    if (pack) {
+        ret = skynet_rt.send(context.source, PTYPE_ID.RESPONSE, context.session, pack);
+    }
+    else {
+        ret = skynet_rt.send(context.source, PTYPE_ID.RESPONSE, context.session);
+    }
     if (ret) {
         return true;
     }
@@ -266,8 +280,8 @@ export function ret(context, ...pack) {
     return false;
 }
 export function retpack(context, ...params) {
-    let pack = context.proto.pack(...params) || [];
-    return ret(context, ...pack);
+    let pack = context.proto.pack(...params);
+    return ret(context, pack);
 }
 export function response(context) {
     if (context.session == 0) {
@@ -283,8 +297,8 @@ export function response(context) {
         let ret = false;
         if (unresponse.has(response)) {
             if (ok) {
-                let pack = context.proto.pack(...params) || [];
-                ret = skynet_rt.send(context.source, PTYPE_ID.RESPONSE, context.session, ...pack);
+                let pack = context.proto.pack(...params);
+                ret = skynet_rt.send(context.source, PTYPE_ID.RESPONSE, context.session, pack);
                 if (ret == false) {
                     // If the package is too large, returns false. so we should report error back
                     skynet_rt.send(context.source, PTYPE_ID.ERROR, context.session);
@@ -341,7 +355,7 @@ export function assert(cond, msg) {
 }
 export function string_unpack(msg, sz) {
     let bytes = fetch_message(msg, sz);
-    return [new TextDecoder().decode(bytes.slice(0, sz))];
+    return [new TextDecoder().decode(bytes.subarray(0, sz))];
 }
 export function string_pack(msg) {
     return [new TextEncoder().encode(msg)];
@@ -353,7 +367,12 @@ import * as lua_seri from "lua_seri";
 register_protocol({
     id: PTYPE_ID.LUA,
     name: PTYPE_NAME.LUA,
-    pack: lua_seri.encode,
+    pack: (...obj) => {
+        let bytes = fetch_message(0n, SHARED_MIN_SZ, 0, shared_bytes);
+        let sz;
+        [shared_bytes, sz] = lua_seri.encode_ex(bytes, 0, ...obj);
+        return shared_bytes.subarray(0, sz);
+    },
     unpack: (msg, sz) => {
         return lua_seri.decode(fetch_message(msg, sz), sz);
     },
@@ -432,8 +451,8 @@ export function term(service) {
 }
 export function launch(...params) {
     let ret = skynet_rt.command("LAUNCH", params.join(" "));
-    if (ret && ret.result) {
-        return parseInt(ret.result.slice(1), 16);
+    if (ret) {
+        return parseInt(ret.slice(1), 16);
     }
 }
 export function kill(name) {
