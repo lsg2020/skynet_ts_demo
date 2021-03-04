@@ -194,10 +194,10 @@ class encoder {
     }
 }
 class decoder {
-    constructor(buffer, sz) {
+    constructor(buffer, sz, pos = 0) {
         this.pos = 0;
         this.sz = 0;
-        this.pos = 0;
+        this.pos = pos;
         this.sz = sz;
         if (buffer && buffer.length) {
             this.bytes = buffer;
@@ -362,4 +362,7 @@ function encode_ex(bytes, offset, ...datas) {
 function decode(buffer, sz) {
     return new decoder(buffer, sz).decode();
 }
-export { encode, encode_ex, decode, };
+function decode_ex(buffer, offset, sz) {
+    return new decoder(buffer, offset + sz, offset).decode();
+}
+export { encode, encode_ex, decode, decode_ex, };

@@ -21,9 +21,8 @@ skynet.register_protocol({
     id: skynet.PTYPE_ID.DEBUG,
     name: skynet.PTYPE_NAME.DEBUG,
     pack: lua_seri.encode,
-    unpack: (msg, sz) => {
-        let bytes = skynet.fetch_message(msg, sz);
-        return lua_seri.decode(bytes, sz);
+    unpack: (msg, offset, sz) => {
+        return lua_seri.decode_ex(msg, offset, sz);
     },
     dispatch: _debug_dispatch,
 });

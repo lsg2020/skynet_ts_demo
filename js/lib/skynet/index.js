@@ -1,3 +1,4 @@
+import * as pack from "pack";
 let skynet_rt = Deno.skynet;
 let proto = new Map();
 export let PTYPE_ID = {
@@ -30,8 +31,8 @@ let watching_request = new Map(); // session -> addr
 let unresponse = new Map(); // call session -> [addr, reject]
 let sleep_session = new Map(); // token -> session
 let next_dispatch_id = 1;
-let _unknow_request = function (session, source, msg, sz, prototype) {
-    skynet_rt.error(`Unknown request (${prototype}): ${sz}`);
+let _unknow_request = function (session, source, msg, prototype) {
+    skynet_rt.error(`Unknown request (${prototype}): ${msg.length}`);
     throw new Error(`Unknown session : ${session} from ${source.toString(16)}`);
 };
 export function dispatch_unknown_request(unknown) {
@@ -39,8 +40,8 @@ export function dispatch_unknown_request(unknown) {
     _unknow_request = unknown;
     return prev;
 }
-let _unknow_response = function (session, source, msg, sz) {
-    skynet_rt.error(`Response message : ${sz}`);
+let _unknow_response = function (session, source, msg) {
+    skynet_rt.error(`Response message : ${msg.length}`);
     throw new Error(`Unknown session : ${session} from ${source.toString(16)}`);
 };
 export function dispatch_unknown_response(unknown) {
@@ -79,26 +80,22 @@ function _error_dispatch(error_session, error_source) {
 }
 const SHARED_MIN_SZ = 128;
 let shared_bytes;
-export function fetch_message(msg, sz, offset, buffer) {
-    offset = offset || 0;
-    let size = sz + offset;
-    if (!buffer || buffer === true) {
+export function alloc_buffer(size, from) {
+    if (!from || from === true) {
         size = size < SHARED_MIN_SZ ? SHARED_MIN_SZ : size;
     }
-    let dst = !buffer ? shared_bytes : (buffer === true ? new Uint8Array(size) : buffer);
+    let dst = !from ? shared_bytes : (from === true ? new Uint8Array(size) : from);
     if (!dst || dst.length < size) {
         let alloc_sz = dst ? size * 2 : size;
         let new_dst = new Uint8Array(alloc_sz);
-        if (buffer) {
-            new_dst.set(buffer);
+        if (from) {
+            new_dst.set(from);
         }
         if (shared_bytes == dst) {
             shared_bytes = new_dst;
         }
         dst = new_dst;
     }
-    if (msg != 0n && sz > 0)
-        sz = Deno.skynet.fetch_message(msg, sz, dst.buffer, offset);
     return dst;
 }
 export function gen_token() {
@@ -108,15 +105,33 @@ export function gen_token() {
     }
     return token;
 }
-async function dispatch_message(prototype, session, source, msg, sz) {
+let shared_bs;
+export function get_shared_bs(is_new_bs) {
+    if (!shared_bs || is_new_bs) {
+        shared_bs = new Uint8Array(Deno.core.shared);
+    }
+    return shared_bs;
+}
+let cur_msgptr = 0n;
+export function get_cur_msgptr() {
+    return cur_msgptr;
+}
+async function dispatch_message(is_new_bs) {
+    let shared_buf = get_shared_bs(is_new_bs);
+    let prototype = pack.decode_uint32(shared_buf, 0, true);
+    let session = pack.decode_uint32(shared_buf, 4, true);
+    let source = pack.decode_uint32(shared_buf, 8, true);
+    let sz = pack.decode_uint32(shared_buf, 12, true);
+    cur_msgptr = pack.decode_biguint(shared_buf, 16, 8, true);
+    let offset = 64;
     if (prototype == PTYPE_ID.RESPONSE) {
         let response_func = session_id_callback.get(session);
         if (!response_func) {
-            return _unknow_response(session, source, msg, sz);
+            return _unknow_response(session, source, shared_buf.slice(offset, offset + sz));
         }
         session_id_callback.delete(session);
         if (!response_func[2])
-            response_func[0]([msg, sz]);
+            response_func[0]([shared_buf, offset, sz]);
     }
     else {
         let p = proto.get(prototype);
@@ -124,7 +139,7 @@ async function dispatch_message(prototype, session, source, msg, sz) {
             if (session != 0) {
                 return skynet_rt.send(source, PTYPE_ID.ERROR, session);
             }
-            return _unknow_request(session, source, msg, sz, prototype);
+            return _unknow_request(session, source, shared_buf.slice(offset, offset + sz), prototype);
         }
         let context = {
             proto: p,
@@ -135,7 +150,7 @@ async function dispatch_message(prototype, session, source, msg, sz) {
         if (session) {
             watching_response.set(session, source);
         }
-        await p.dispatch(context, ...p.unpack(msg, sz));
+        await p.dispatch(context, ...p.unpack(shared_buf, offset, sz));
         if (session && watching_response.has(session)) {
             watching_response.delete(session);
             skynet_rt.error(`Maybe forgot response session:${session} proto:${p.name} source:${source}`);
@@ -255,8 +270,8 @@ export async function call(addr, typename, ...params) {
     let p = proto.get(typename);
     let pack = p.pack(...params);
     let session = skynet_rt.send(addr, p.id, null, pack);
-    let [bytes, sz] = await _yield_call(session, addr);
-    return p.unpack(bytes, sz);
+    let [buff, offset, sz] = await _yield_call(session, addr);
+    return p.unpack(buff, offset, sz);
 }
 export function ret(context, pack) {
     if (context.session == 0) {
@@ -353,9 +368,8 @@ export function assert(cond, msg) {
     }
     return cond;
 }
-export function string_unpack(msg, sz) {
-    let bytes = fetch_message(msg, sz);
-    return [new TextDecoder().decode(bytes.subarray(0, sz))];
+export function string_unpack(msg, offset, sz) {
+    return [new TextDecoder().decode(msg.subarray(offset, offset + sz))];
 }
 export function string_pack(msg) {
     return [new TextEncoder().encode(msg)];
@@ -368,13 +382,13 @@ register_protocol({
     id: PTYPE_ID.LUA,
     name: PTYPE_NAME.LUA,
     pack: (...obj) => {
-        let bytes = fetch_message(0n, SHARED_MIN_SZ, 0, shared_bytes);
+        let bytes = alloc_buffer(SHARED_MIN_SZ, shared_bytes);
         let sz;
         [shared_bytes, sz] = lua_seri.encode_ex(bytes, 0, ...obj);
         return shared_bytes.subarray(0, sz);
     },
-    unpack: (msg, sz) => {
-        return lua_seri.decode(fetch_message(msg, sz), sz);
+    unpack: (msg, offset, sz) => {
+        return lua_seri.decode_ex(msg, offset, sz);
     },
     dispatch: undefined,
 });
