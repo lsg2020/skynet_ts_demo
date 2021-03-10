@@ -71,7 +71,7 @@ export async function close(id: SOCKET_ID) {
         return;
     }
 
-    if (s.connecting) {
+    if (s.connected) {
         skynet_rt.socket_close(id);
         if (s.suspend_token) {
             skynet.assert(!s.closing);
