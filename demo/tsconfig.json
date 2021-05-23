@@ -1,0 +1,26 @@
+{
+    "compilerOptions": {
+      "target": "esnext",                     /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019', 'ES2020', or 'ESNEXT'. */
+      "module": "esnext",                     /* Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', 'es2020', or 'ESNext'. */
+      //"allowJs": true,                        /* Allow javascript files to be compiled. */
+      "outDir": "../js",                      /* Redirect output structure to the directory. */
+      "strict": true,                         /* Enable all strict type-checking options. */
+      "baseUrl": "../",                       /* Base directory to resolve non-absolute module names. */
+      "paths": {
+        "*": [
+          "demo/lib/*", 
+          "demo/lib/*/index",
+          "skynet_ts/ts/lib/*", 
+          "skynet_ts/ts/lib/*/index",
+          "skynet_ts/ts/lib/skynet/*", 
+          "skynet_ts/ts/lib/skynet/*/index",
+        ]
+      },                           /* A series of entries which re-map imports to lookup locations relative to the 'baseUrl'. */
+      "esModuleInterop": true,                  /* Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. */
+      "skipLibCheck": true,                     /* Skip type checking of declaration files. */
+      "forceConsistentCasingInFileNames": true  /* Disallow inconsistently-cased references to the same file. */
+    },
+    "exclude": [],
+    "include": ["../skynet_ts/ts/dts/*", "../skynet_ts/ts/lib/*", "*", "**/*"],
+  }
+  

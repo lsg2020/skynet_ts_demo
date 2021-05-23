@@ -1,0 +1,20 @@
+root = "./skynet/"
+luaservice = "service/?.lua;service/?/main.lua;" .. root.."service/?.lua;"..root.."test/?.lua;"..root.."examples/?.lua;"..root.."test/?/init.lua"
+lualoader = root .. "lualib/loader.lua"
+lua_path = "lualib/?.lua;lualib/?/init.lua;" .. root.."lualib/?.lua;"..root.."lualib/?/init.lua"
+lua_cpath = "build/clualib/?.so;" .. root .. "luaclib/?.so"
+snax = root.."examples/?.lua;"..root.."test/?.lua"
+cpath = "build/cservice/?.so"
+
+thread = 8
+logger = nil
+logpath = "."
+harbor = 0
+start = "main"	-- main script
+bootstrap = "snlua bootstrap"	-- The service for bootstrap
+certfile="./test.crt"
+keyfile="./test.key"
+
+js_loader="./js/skynet_ts/ts/lib/loader.js"
+jslib="js/demo/lib/?.js;js/demo/lib/?/index.js;js/skynet_ts/ts/lib/?.js;js/skynet_ts/ts/lib/?/index.js;js/skynet_ts/ts/lib/skynet/?.js;js/skynet_ts/ts/lib/skynet/?/index.js"
+jsservice="js/demo/service/?.js;js/demo/service/?/main.js;js/skynet_ts/ts/service/?.js;js/skynet_ts/ts/service/?/main.js"
