@@ -11,6 +11,28 @@
     * `js_loader`: js服务入口文件,例如:`./js/skynet_ts/ts/lib/loader.js`,[loader](https://github.com/lsg2020/skynet_ts/blob/master/ts/lib/loader.ts)生成的js对应路径
     * `jslib`: js库搜索路径,例如:`js/demo/lib/?.js;js/demo/lib/?/index.js;js/skynet_ts/ts/lib/?.js;js/skynet_ts/ts/lib/?/index.js;js/skynet_ts/ts/lib/skynet/?.js;js/skynet_ts/ts/lib/skynet/?/index.js`
     * `jsservice`: js服务搜索路径,例如:`js/demo/service/?.js;js/demo/service/?/main.js;js/skynet_ts/ts/service/?.js;js/skynet_ts/ts/service/?/main.js`
+* 启动js服务 `skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "test")`
+* 使用skynet消息接口
+``` ts
+import * as skynet from "skynet"
+skynet.start(async () => {
+    skynet.dispatch("lua", async (context: skynet.CONTEXT, cmd: string, ...params: any) => {
+        console.log(cmd);
+    });
+    skynet.register(".test")
+})
+```
+* 使用deno接口
+``` ts
+import * as skynet from "skynet"
+import * as uuid from "std/uuid/mod"
+skynet.start(async () => {
+    let data = await fetch("https://www.baidu.com");
+    console.log(data);
+    console.log(WebSocket);
+    console.log(uuid.v4.generate());
+})
+```
 
 # build
 * Rust `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
