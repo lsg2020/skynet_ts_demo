@@ -34,7 +34,8 @@ skynet.start(async () => {
 })
 ```
 
-# build
+# build on ubuntu
+* `apt install autoconf autogen gcc g++ python openssl libssl-dev pkg-config build-essential libglib2.0-dev`
 * Rust `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 * TypeScript `npm install typescript -g`
 * 配置http代理 编译google v8 例:
