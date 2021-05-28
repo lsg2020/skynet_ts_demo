@@ -34,8 +34,8 @@ skynet.start(async () => {
 })
 ```
 
-# build on ubuntu
-* `apt install autoconf autogen gcc g++ python openssl libssl-dev pkg-config build-essential libglib2.0-dev`
+# ubuntu编译
+* `apt install autoconf autogen gcc g++ python openssl libssl-dev pkg-config build-essential libglib2.0-dev npm`
 * Rust `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 * TypeScript `npm install typescript -g`
 * 配置http代理 编译google v8 例:
@@ -43,4 +43,27 @@ skynet.start(async () => {
 export https_proxy=192.168.163.1:10809
 export http_proxy=192.168.163.1:10809
 ```
-* make
+* clone && make
+
+# windows编译 比较麻烦可以考虑编译好的[文件](https://github.com/lsg2020/skynet_ts_demo/releases)
+* 环境配置
+    * 安装[rust](https://www.rust-lang.org/learn/get-started)
+    * 安装[msys2](https://www.msys2.org/) `pacman -S libreadline-devel base-devel gcc git python`
+    * 安装[vs2019](https://visualstudio.microsoft.com/zh-hans/downloads/) 
+        * `MSVC v142 - VS 2019 C++ x64/x86 build tools` 
+        * `Windows 10 SDK` 
+        * `英文语言包`
+    * [win10 sdk](https://developer.microsoft.com/en-us/windows/downloads/windows-10-sdk/)
+    * 安装[vcpkg](https://github.com/microsoft/vcpkg) `vcpkg install openssl:x86-windows-static`
+    * 配置代理
+```
+set https_proxy=192.168.163.1:10809
+set http_proxy=192.168.163.1:10809
+```
+    * `msys2_shell.cmd` 开启 `set MSYS2_PATH_TYPE=inherit`
+* 编译
+    * 执行 `msys2_shell.cmd` 
+        * `git clone https://github.com/lsg2020/skynet_ts_demo`
+        * 编译skynet mingw版本 `cd skynet_ts_demo && make -f win.mk`
+    * 编译skynet_ts windows版本 `cd skynet_ts && set V8_FROM_SOURCE=1 && cargo build --release && copy target\release\sndeno.dll ..\build\cservice\snjs.so /y`
+* 测试 `.\build\skynet config`
