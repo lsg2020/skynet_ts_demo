@@ -63,3 +63,16 @@ skynet_ts: $(CSERVICE_DIR)/snjs.so $(word 1, $(js_dst))
 
 clean:
 	-rm -rf $(BUILD_DIR)
+
+
+SKYNET_MINGW=skynet-mingw/skynet-src/skynet_main.c
+$(SKYNET_MINGW):
+	cd skynet-mingw && sh prepare.sh
+
+win: | $(SKYNET_MINGW) build
+	cd skynet-mingw && $(MAKE) $(SKYNET_DEP_PATH)
+
+clean-skynet-mingw:
+	cd skynet-mingw && $(MAKE) clean
+
+clean: clean-skynet-mingw
