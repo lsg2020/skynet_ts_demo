@@ -5,11 +5,11 @@ import * as handle_gm from "cmds/handle_gm"
 let handles = new Map<string, Function>();
 handle_gm.register(handles);
 
-function dispatch_lua(context: skynet.CONTEXT, cmd: string, ...params: any) {
+async function dispatch_lua(context: skynet.CONTEXT, cmd: string, ...params: any) {
     let handle = handles.get(cmd);
     //console.trace()
     skynet.assert(handle, `not exists cmd:${cmd}`);
-    handle!(context, ...params);
+    await handle!(context, ...params);
 }
 
 WebAssembly.compile(new Uint8Array(`

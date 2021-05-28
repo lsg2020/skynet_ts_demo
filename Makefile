@@ -1,28 +1,11 @@
-.PHONY: all clean build skynet
+include common.mk
 
-BUILD_DIR = $(PWD)/build
-BIN_DIR = $(BUILD_DIR)
-CLUALIB_DIR = $(BUILD_DIR)/clualib
-CSERVICE_DIR = $(BUILD_DIR)/cservice
 PLAT = linux
 
-all: build
-
-build:
-	-mkdir -p $(BIN_DIR)
-	-mkdir -p $(CLUALIB_DIR)
-	-mkdir -p $(CSERVICE_DIR)
-
-# skynet
-all: skynet
 SKYNET_MAKEFILE=skynet/Makefile
 
 $(SKYNET_MAKEFILE):
 	git submodule update --init
-
-SKYNET_DEP_PATH= SKYNET_BUILD_PATH=$(BIN_DIR) \
-		LUA_CLIB_PATH=$(CLUALIB_DIR) \
-		CSERVICE_PATH=$(CSERVICE_DIR)
 
 build-lua:
 ifeq ($(CLONEFUNC),true)
@@ -43,16 +26,12 @@ clean-skynet:
 
 clean: clean-skynet
 
+all: skynet
 
-# skynet_ts
-all: skynet_ts
-SKYNET_TS_FILE=skynet_ts/rusty_v8/Cargo.toml
 
-$(SKYNET_TS_FILE):
-	git submodule update --init --recursive
 
 $(CSERVICE_DIR)/snjs.so: | $(SKYNET_TS_FILE)
-	export V8_FROM_SOURCE=$(PWD)/skynet_ts/rusty_v8/v8/ && cd skynet_ts && cargo build --release && cp target/release/libsndeno.so $(CSERVICE_DIR)/snjs.so
+	export V8_FROM_SOURCE=1 && cd skynet_ts && cargo build --release && cp target/release/libsndeno.so $(CSERVICE_DIR)/snjs.so
 
 ts_src=$(shell find demo -name "*.ts")
 js_dst=$(patsubst %.ts, %.js, $(ts_src))
@@ -61,18 +40,8 @@ $(word 1, $(js_dst)): $(ts_src)
 
 skynet_ts: $(CSERVICE_DIR)/snjs.so $(word 1, $(js_dst))
 
+all: skynet_ts
+
+
 clean:
 	-rm -rf $(BUILD_DIR)
-
-
-SKYNET_MINGW=skynet-mingw/skynet-src/skynet_main.c
-$(SKYNET_MINGW):
-	cd skynet-mingw && sh prepare.sh
-
-win: | $(SKYNET_MINGW) build
-	cd skynet-mingw && $(MAKE) $(SKYNET_DEP_PATH)
-
-clean-skynet-mingw:
-	cd skynet-mingw && $(MAKE) clean
-
-clean: clean-skynet-mingw

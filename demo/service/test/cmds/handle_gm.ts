@@ -21,9 +21,8 @@ reg(MSGID.add, (context: skynet.CONTEXT, a: number, b: number) => {
 })
 
 reg(MSGID.sleep, async (context: skynet.CONTEXT, ti: number) => {
-    let response = skynet.response(context)
     await skynet.sleep(ti)
-    response(true, ti)
+    skynet.retpack(context, ti)
 })
 
 reg(MSGID.call, async (context: skynet.CONTEXT, name: string, cmd: string, ...params: number[]) => {
