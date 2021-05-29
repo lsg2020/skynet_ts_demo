@@ -1,5 +1,9 @@
 local skynet = require("skynet")
 skynet.start(function()
+    skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "grpc/grpc_server", 5022)
+    skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "grpc/grpc_client", 5022)
+    skynet.sleep(300)
+    
     skynet.dispatch("lua", function(session, source, cmd, ...)
         print("lua recv call", cmd, ...)
         skynet.retpack(...)
