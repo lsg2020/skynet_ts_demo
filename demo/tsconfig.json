@@ -21,6 +21,6 @@
       "forceConsistentCasingInFileNames": true  /* Disallow inconsistently-cased references to the same file. */
     },
     "exclude": [],
-    "include": ["../skynet_ts/ts/dts/*", "../skynet_ts/ts/lib/*", "*", "**/*"],
+    "include": ["../skynet_ts/ts/dts/*", "../skynet_ts/ts/lib/*", "../skynet_ts/ts/service/**/*", "*", "**/*"],
   }
   
