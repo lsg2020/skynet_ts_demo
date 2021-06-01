@@ -47,5 +47,5 @@ skynet.start(async () => {
 
     skynet.dispatch("lua", dispatch_lua);
     skynet.register(".test")
-    //test()
+    test()
 })

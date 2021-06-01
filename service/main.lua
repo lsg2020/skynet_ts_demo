@@ -1,9 +1,11 @@
 local skynet = require("skynet")
 skynet.start(function()
+    skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "v8_inspector", "127.0.0.1", 5021)
+
     skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "grpc/grpc_server", 5022)
     skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "grpc/grpc_client", 5022)
     skynet.sleep(300)
-    
+
     skynet.dispatch("lua", function(session, source, cmd, ...)
         print("lua recv call", cmd, ...)
         skynet.retpack(...)
@@ -17,8 +19,7 @@ skynet.start(function()
     assert(sleep_ret == 100)
     print("sleep_ret", skynet.now())
     local call_ret = skynet.call(".test", "lua", "call", skynet.self(), "test1234", 1, 2, 3, 4)
-    assert(call_ret[1] == 1 and call_ret[4] == 4)    
-
+    assert(call_ret[1] == 1 and call_ret[4] == 4)
 
     print("------------ test deno websocket")
     local ws_port = 5023
