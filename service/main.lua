@@ -1,6 +1,6 @@
 local skynet = require("skynet")
 skynet.start(function()
-    skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "v8_inspector", "127.0.0.1", 5021)
+    skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "v8_inspector", "0.0.0.0", 5021)
 
     skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "grpc/grpc_server", 5022)
     skynet.call(".launcher", "lua" , "LAUNCH", "snjs", "grpc/grpc_client", 5022)
