@@ -1,7 +1,5 @@
 include common.mk
 
-PLAT = linux
-
 SKYNET_MAKEFILE=skynet/Makefile
 
 $(SKYNET_MAKEFILE):

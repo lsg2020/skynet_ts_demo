@@ -1,4 +1,18 @@
 .PHONY: all clean build skynet
+.PHONY: none $(PLATS)
+
+PLAT ?= none
+PLATS = linux macosx
+
+none :
+	@echo "Please do 'make PLATFORM' where PLATFORM is one of these:"
+	@echo "   $(PLATS)"
+
+linux : PLAT = linux
+macosx : PLAT = macosx
+
+linux macosx freebsd :
+	$(MAKE) all PLAT=$@
 
 BUILD_DIR = $(PWD)/build
 BIN_DIR = $(BUILD_DIR)
